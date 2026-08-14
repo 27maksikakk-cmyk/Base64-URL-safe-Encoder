@@ -1,0 +1,106 @@
+// base64_url.rs — Rust версия
+
+use std::env;
+use std::fs;
+use std::io::{self, Read};
+use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+use arboard::Clipboard;
+
+fn copy_to_clipboard(text: &str) -> bool {
+    let mut clipboard = Clipboard::new().ok()?;
+    clipboard.set_text(text).ok()?;
+    Some(true).unwrap()
+}
+
+fn encode_string(data: &str) -> String {
+    URL_SAFE_NO_PAD.encode(data.as_bytes())
+}
+
+fn encode_file(filename: &str) -> Result<String, Box<dyn std::error::Error>> {
+    let data = fs::read(filename)?;
+    Ok(URL_SAFE_NO_PAD.encode(&data))
+}
+
+fn decode_string(data: &str) -> Result<String, Box<dyn std::error::Error>> {
+    let decoded = URL_SAFE_NO_PAD.decode(data)?;
+    Ok(String::from_utf8(decoded)?)
+}
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let args: Vec<String> = env::args().collect();
+    let mut input = String::new();
+    let mut file_path = String::new();
+    let mut decode = false;
+    let mut output = String::new();
+    let mut no_copy = false;
+
+    let mut i = 1;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--input" => { input = args[i+1].clone(); i += 2; }
+            "--file" => { file_path = args[i+1].clone(); i += 2; }
+            "--decode" => { decode = true; i += 1; }
+            "--output" => { output = args[i+1].clone(); i += 2; }
+            "--no-copy" => { no_copy = true; i += 1; }
+            _ => {
+                if !args[i].starts_with('-') {
+                    if input.is_empty() && file_path.is_empty() {
+                        input = args[i].clone();
+                    }
+                }
+                i += 1;
+            }
+        }
+    }
+
+    println!("\x1b[36m🔐 Base64 URL-safe Encoder (Rust)\x1b[0m");
+
+    let result = if !file_path.is_empty() {
+        println!("📂 Обработка файла: {}", file_path);
+        if decode {
+            let content = fs::read_to_string(&file_path)?;
+            decode_string(content.trim())?
+        } else {
+            encode_file(&file_path)?
+        }
+    } else if !input.is_empty() {
+        println!("📝 Входные данные: {}", input);
+        if decode {
+            decode_string(&input)?
+        } else {
+            encode_string(&input)
+        }
+    } else {
+        println!("📝 Чтение из STDIN (Ctrl+D для окончания)");
+        let mut buffer = String::new();
+        io::stdin().read_to_string(&mut buffer)?;
+        if buffer.is_empty() {
+            println!("\x1b[33m⚠️ Пустой ввод.\x1b[0m");
+            std::process::exit(1);
+        }
+        if decode {
+            decode_string(buffer.trim())?
+        } else {
+            encode_string(&buffer)
+        }
+    };
+
+    println!("\x1b[32mРезультат:\x1b[0m");
+    println!("{}", result);
+    println!();
+
+    if !no_copy {
+        if copy_to_clipboard(&result) {
+            println!("\x1b[32m✅ Результат скопирован в буфер обмена!\x1b[0m");
+        } else {
+            println!("\x1b[33m⚠️ Не удалось скопировать в буфер обмена.\x1b[0m");
+        }
+    }
+
+    if !output.is_empty() {
+        fs::write(&output, result)?;
+        println!("\x1b[32m💾 Сохранено в {}\x1b[0m", output);
+    }
+
+    Ok(())
+}
